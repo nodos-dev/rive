@@ -1,0 +1,15 @@
+{
+    "info": {
+        "id": {
+            "name": "nos.rive",
+            "version": "0.1.0"
+        },
+        "display_name": "Rive Renderer",
+        "description": "",
+        "dependencies": []
+    },
+    "binary_path": "Binaries/nosRive",
+    "node_definitions": [],
+    "defaults": [],
+    "custom_types": []
+}
