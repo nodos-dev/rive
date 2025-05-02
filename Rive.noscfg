@@ -1,17 +1,22 @@
 {
-    "info": {
-        "id": {
-            "name": "nos.rive",
-            "version": "0.1.0"
-        },
-        "display_name": "Rive Renderer",
-        "description": "",
-        "dependencies": []
-    },
-    "binary_path": "Binaries/nosRive",
-    "node_definitions": [
-        "Config/RiveRenderer.nosdef"
-    ],
-    "defaults": [],
-    "custom_types": []
+	"info": {
+		"id": {
+			"name": "nos.rive",
+			"version": "0.1.0"
+		},
+		"display_name": "Rive Renderer",
+		"description": "",
+		"dependencies": [
+			{
+				"name": "nos.sys.vulkan",
+				"version": "6.24"
+			}
+		]
+	},
+	"binary_path": "Binaries/nosRive",
+	"node_definitions": [
+		"Config/RiveRenderer.nosdef"
+	],
+	"defaults": [],
+	"custom_types": []
 }
