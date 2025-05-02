@@ -1,0 +1,37 @@
+{
+	"nodes": [
+		{
+			"class_name": "Renderer",
+			"menu_info": {
+				"category": "UI",
+				"display_name": "Rive Renderer"
+			},
+			"node": {
+				"class_name": "Renderer",
+				"contents_type": "Job",
+				"pins": [
+					{
+						"name": "AssetPath",
+						"display_name": "Asset Path",
+						"type_name": "string",
+						"show_as": "PROPERTY",
+						"can_show_as": "INPUT_PIN_OR_PROPERTY"
+					},
+					{
+						"name": "Time",
+						"display_name": "Time",
+						"type_name": "float",
+						"show_as": "INPUT_PIN",
+						"can_show_as": "INPUT_PIN_ONLY"
+					},
+					{
+						"name": "Output",
+						"type_name": "nos.sys.vulkan.Texture",
+						"show_as": "OUTPUT_PIN",
+						"can_show_as": "OUTPUT_PIN_ONLY"
+					}
+				]
+			}
+		}
+	]
+}

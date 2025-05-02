@@ -1,0 +1,3 @@
+[submodule "External/rive-lib"]
+	path = External/rive-lib
+	url = https://github.com/nodos-dev/rive-lib.git

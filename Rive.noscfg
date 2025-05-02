@@ -9,7 +9,9 @@
         "dependencies": []
     },
     "binary_path": "Binaries/nosRive",
-    "node_definitions": [],
+    "node_definitions": [
+        "Config/RiveRenderer.nosdef"
+    ],
     "defaults": [],
     "custom_types": []
 }

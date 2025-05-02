@@ -1,4 +1,4 @@
-set(USE_NOS_SDK_VERSION "1.2.2")
+set(USE_NOS_SDK_VERSION "1.4.0")
 nos_find_sdk(${USE_NOS_SDK_VERSION} NOS_PLUGIN_SDK_TARGET NOS_SUBSYSTEM_SDK_TARGET NOS_SDK_DIR)
 if (NOT DEFINED NOS_SDK_DIR)
     message(FATAL_ERROR "Nodos SDK with version ${USE_NOS_SDK_VERSION} not found, please either install it or choose different version")
@@ -14,10 +14,13 @@ foreach(module_name_version ${MODULE_DEPENDENCIES})
     nos_get_module("${module_name}" "${module_version}" DEP_${dep_idx})
     list(APPEND MODULE_DEPENDENCIES_TARGETS ${DEP_${dep_idx}})
 endforeach()
-list(APPEND MODULE_DEPENDENCIES_TARGETS ${NOS_PLUGIN_SDK_TARGET})
+
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/External/rive-lib")
+list(APPEND MODULE_DEPENDENCIES_TARGETS ${NOS_PLUGIN_SDK_TARGET} rive-lib)
+nos_group_targets("rive-lib" "External")
 
 set(INCLUDE_FOLDERS "")
-nos_add_plugin("nos.rive" "${MODULE_DEPENDENCIES_TARGETS}" "${INCLUDE_FOLDERS}")
+nos_add_plugin("nosRive" "${MODULE_DEPENDENCIES_TARGETS}" "${INCLUDE_FOLDERS}")
+nos_group_targets("nosRive" "NOS Plugins")
 
-#Helpers need C++20
-set_target_properties("nos.rive" PROPERTIES CXX_STANDARD 20)
+set_target_properties("nosRive" PROPERTIES CXX_STANDARD 20)
