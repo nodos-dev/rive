@@ -10,6 +10,10 @@
 #include <rive/file.hpp>
 #include <rive/factory.hpp>
 #include <rive/animation/state_machine_instance.hpp>
+#include <rive/animation/state_machine_input_instance.hpp>
+#include <rive/animation/state_machine_bool.hpp>
+#include <rive/animation/state_machine_number.hpp>
+#include <rive/animation/state_machine_trigger.hpp>
 
 #include <nosVulkanSubsystem/nosVulkanSubsystem.h>
 #include <nosVulkanSubsystem/Helpers.hpp>
@@ -342,18 +346,58 @@ struct RendererNode : NodeContext
 						dataType = ::rive::DataType::trigger;
 					else
 						continue;
-					Bindings[bindingName] = { bindingName, dataType, val };
+					DataBinding binding{
+						.ParentName = vmName,
+						.Name = bindingName,
+						.RiveType = dataType,
+						.Type = DataBindType::ViewModel,
+						.ViewModelValue = val
+					};
+					Bindings[binding.GetUniqueName()] = binding;
 				}
 			}
-			RecreatePins();
 
-			// Fall back to default if named one not found
 			StateMachine = Artboard->defaultStateMachine();
-			
-			// Finally try first available
+			// If no default state machine, try to get the first one
 			if (!StateMachine && Artboard->stateMachineCount() > 0) {
 				StateMachine = Artboard->stateMachineAt(0);
 			}
+
+			if (StateMachine)
+			{
+				// Add state machine inputs to bindings
+				auto smName = StateMachine->name();
+				auto inputCount = StateMachine->inputCount();
+				for (size_t i = 0; i < inputCount; i++) {
+					auto input = StateMachine->input(i);
+					auto inputName = input->name();
+
+					nosEngine.LogI("State Machine Input: %s", inputName.c_str());
+
+					::rive::DataType dataType{};
+
+					if (input->inputCoreType() == ::rive::StateMachineBool::typeKey)
+						dataType = ::rive::DataType::boolean;
+					else if (input->inputCoreType() == ::rive::StateMachineNumber::typeKey)
+						dataType = ::rive::DataType::number;
+					// TODO: Support nos.exe trigger pins.
+					// else if (input->inputCoreType() == ::rive::StateMachineTriggerBase::typeKey)
+					// 	dataType = ::rive::DataType::trigger;
+					else
+						continue;
+
+					DataBinding binding{
+						.ParentName = smName,
+						.Name = inputName,
+						.RiveType = dataType,
+						.Type = DataBindType::StateMachineInput,
+						.SmInput = input
+					};
+					Bindings[binding.GetUniqueName()] = binding;
+				}
+			}
+
+			RecreatePins();
 		}
 
 		return NOS_RESULT_SUCCESS;
@@ -407,19 +451,20 @@ struct RendererNode : NodeContext
 			pinsToDelete.push_back(pin.PinId);
 		}
 		
-		for (auto& [name, prop] : Bindings)
+		for (auto& [name, binding] : Bindings)
 		{
 			uuid id = nosEngine.GenerateID();
-			auto nodosType = RiveDataType2NodosType(prop.RiveType);
+			auto nodosType = RiveDataType2NodosType(binding.RiveType);
 			if (skipCreation.contains(name))
 				continue;
 			nos::fb::TPin pin{};
 			pin.id = id;
-			pin.name = prop.Name.c_str();
+			pin.name = binding.GetUniqueName().c_str();
+			pin.display_name = binding.GetDisplayName().c_str();
 			pin.type_name = nodosType;
 			pin.show_as = fb::ShowAs::INPUT_PIN;
 			pin.can_show_as = fb::CanShowAs::INPUT_PIN_OR_PROPERTY;
-			pin.display_name = prop.Name.c_str();
+			pin.display_name = binding.Name.c_str();
 			pinsToAdd.push_back(fb::CreatePin(fbb, &pin));	
 		}
 
@@ -479,19 +524,48 @@ struct RendererNode : NodeContext
 				continue;
 			auto pinInfo = execParams[pinName];
 			auto pinBuf = pinInfo.Data;
-			switch (binding.RiveType)
+
+			switch (binding.Type)
 			{
-			case ::rive::DataType::string:
-				binding.Value->as<::rive::ViewModelInstanceString>()->propertyValue(static_cast<const char*>(pinBuf->Data));
-				break;
-			case ::rive::DataType::number:
-				binding.Value->as<::rive::ViewModelInstanceNumber>()->propertyValue(*static_cast<float*>(pinBuf->Data));
-				break;
-			case ::rive::DataType::boolean:
-				binding.Value->as<::rive::ViewModelInstanceBoolean>()->propertyValue(*static_cast<bool*>(pinBuf->Data));
-				break;
-			default:
-				break;
+			case DataBindType::ViewModel:
+				{
+					switch (binding.RiveType)
+					{
+					case ::rive::DataType::string:
+						binding.ViewModelValue->as<::rive::ViewModelInstanceString>()->propertyValue(static_cast<const char*>(pinBuf->Data));
+						break;
+					case ::rive::DataType::number:
+						binding.ViewModelValue->as<::rive::ViewModelInstanceNumber>()->propertyValue(*static_cast<float*>(pinBuf->Data));
+						break;
+					case ::rive::DataType::boolean:
+						binding.ViewModelValue->as<::rive::ViewModelInstanceBoolean>()->propertyValue(*static_cast<bool*>(pinBuf->Data));
+						break;
+					default:
+						break;
+					}
+					break;
+				}
+			case DataBindType::StateMachineInput:
+				{
+					switch (binding.RiveType)
+					{
+					case ::rive::DataType::number:
+						if (auto smiNum = StateMachine->getNumber(binding.Name))
+							smiNum->value(*static_cast<float*>(pinBuf->Data));
+						break;
+					case ::rive::DataType::boolean:
+						if (auto smiBool = StateMachine->getBool(binding.Name))
+							smiBool->value(*static_cast<bool*>(pinBuf->Data));
+						break;
+					case ::rive::DataType::trigger:
+						// For triggers, we just need to fire them when the pin is triggered
+						// TODO.
+						break;
+					default:
+						break;
+					}
+					break;
+				}
 			}
 		}
 
@@ -527,11 +601,41 @@ struct RendererNode : NodeContext
 	std::filesystem::path AssetPath;
 
 	// Data binds:
+	enum class DataBindType
+	{
+		None,
+		ViewModel,
+		StateMachineInput
+	};
 	struct DataBinding
 	{
+		std::string ParentName;
 		std::string Name;
 		::rive::DataType RiveType;
-		::rive::ViewModelInstanceValue* Value;
+		DataBindType Type = DataBindType::None;
+		union
+		{
+			::rive::ViewModelInstanceValue* ViewModelValue;
+			::rive::SMIInput* SmInput;
+		};
+		std::string GetDisplayName() const
+		{
+			return ParentName.empty() ? Name : ParentName + " " + Name;
+		}
+		std::string GetUniqueName() const
+		{
+			std::string prefix;
+			switch (Type)
+			{
+			case DataBindType::ViewModel:
+				prefix = "VM_";
+				break;
+			case DataBindType::StateMachineInput:
+				prefix = "SM_";
+				break;
+			}
+			return prefix + (ParentName.empty() ? "" : ParentName + "_") + Name;
+		}
 	};
 	std::map<std::string, DataBinding> Bindings;
 
