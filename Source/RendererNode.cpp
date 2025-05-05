@@ -229,8 +229,8 @@ struct RendererNode : NodeContext
 	}
 
 	nosResult Recreate() {
-		FrameDesc.loadAction = ::rive::gpu::LoadAction::dontCare;
-		FrameDesc.clearColor = ::rive::colorARGB(255, 0, 255, 255);
+		FrameDesc.loadAction = ::rive::gpu::LoadAction::clear;
+		FrameDesc.clearColor = ::rive::colorARGB(0, 0, 0, 0);
 		StateMachine.reset();
 		Renderer = std::make_unique<::rive::RiveRenderer>(RenderContext.get());
 
