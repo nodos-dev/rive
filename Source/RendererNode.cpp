@@ -194,7 +194,6 @@ struct RendererNode : NodeContext
 			.disableTypedUAVLoadStore = false
 		};
 		RenderContext = ::rive::gpu::RenderContextD3DImpl::MakeContext(Device, Context, options);
-		Renderer = std::make_unique<::rive::RiveRenderer>(RenderContext.get());
 
 		FrameDesc.renderTargetWidth = 1920;
 		FrameDesc.renderTargetHeight = 1080;
@@ -204,12 +203,6 @@ struct RendererNode : NodeContext
 			std::string_view pinName = pin->name()->string_view();
 			if (pinName == "Resolution" || pinName == "AssetPath" || pinName == "Output")
 				continue;
-			CreatedPin created{
-				.PinId = *pin->id(),
-				.Name = pinName.data(),
-				.NodosType = pin->type_name()->str(),
-			};
-			CreatedPins.push_back(std::move(created));
 			SetPinOrphanState(nos::Name(pinName), fb::PinOrphanStateType::ACTIVE);
 		}
 
@@ -232,7 +225,8 @@ struct RendererNode : NodeContext
 	nosResult Recreate() {
 		FrameDesc.loadAction = ::rive::gpu::LoadAction::dontCare;
 		FrameDesc.clearColor = ::rive::colorARGB(255, 0, 255, 255);
-		StateMachine = nullptr;
+		StateMachine.reset();
+		Renderer = std::make_unique<::rive::RiveRenderer>(RenderContext.get());
 
 		// Create render target
 		{
@@ -389,7 +383,8 @@ struct RendererNode : NodeContext
 
 		std::vector<nos::fb::UUID> pinsToDelete;
 		std::unordered_set<std::string> skipCreation;
-		for (auto& pin : CreatedPins)
+		auto createdPins = GetCreatedPins();
+		for (auto& pin : createdPins)
 		{
 			auto it = Bindings.find(pin.Name);
 			if (it != Bindings.end())
@@ -400,17 +395,11 @@ struct RendererNode : NodeContext
 				}
 			pinsToDelete.push_back(pin.PinId);
 		}
-		CreatedPins.clear();
 		
 		for (auto& [name, prop] : Bindings)
 		{
 			uuid id = nosEngine.GenerateID();
 			auto nodosType = RiveDataType2NodosType(prop.RiveType);
-			CreatedPins.push_back(CreatedPin{
-				.PinId = id,
-				.Name = name,
-				.NodosType = nodosType,
-			});
 			if (skipCreation.contains(name))
 				continue;
 			nos::fb::TPin pin{};
@@ -426,6 +415,29 @@ struct RendererNode : NodeContext
 		HandleEvent(CreateAppEvent(
 			fbb,
 			CreatePartialNodeUpdateDirect(fbb, &NodeId, nos::ClearFlags::NONE, &pinsToDelete, &pinsToAdd)));
+	}
+
+	struct CreatedPin
+	{
+		uuid PinId;
+		std::string Name;
+		std::string NodosType;
+	};
+
+	std::vector<CreatedPin> GetCreatedPins()
+	{
+		std::vector<CreatedPin> pins;
+		for (auto& [id, pin] : Pins)
+		{
+			if (pin.Name == "Resolution" || pin.Name == "AssetPath" || pin.Name == "Output")
+				continue;
+			pins.push_back(CreatedPin{
+				.PinId = id,
+				.Name = pin.Name.AsString(),
+				.NodosType = pin.TypeName.AsString(),
+			});
+		}
+		return pins;
 	}
 
 	nosResult ExecuteNode(nosNodeExecuteParams* params) override
@@ -511,13 +523,6 @@ struct RendererNode : NodeContext
 		::rive::ViewModelInstanceValue* Value;
 	};
 	std::map<std::string, DataBinding> Bindings;
-	struct CreatedPin
-	{
-		uuid PinId;
-		std::string Name;
-		std::string NodosType;
-	};
-	std::vector<CreatedPin> CreatedPins;
 
 	std::unique_ptr<::rive::StateMachineInstance> StateMachine;
 };

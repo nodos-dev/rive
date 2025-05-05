@@ -8,6 +8,7 @@
 			},
 			"node": {
 				"class_name": "Renderer",
+				"display_name": "Rive Renderer",
 				"always_execute": true,
 				"contents_type": "Job",
 				"pins": [
