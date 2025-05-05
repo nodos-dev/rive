@@ -222,6 +222,12 @@ struct RendererNode : NodeContext
 		return NOS_RESULT_SUCCESS;
 	}
 
+	nosResult OnDestroy() override
+	{
+		DeleteImportedResource();
+		return NOS_RESULT_SUCCESS;
+	}
+
 	nosResult Recreate() {
 		FrameDesc.loadAction = ::rive::gpu::LoadAction::dontCare;
 		FrameDesc.clearColor = ::rive::colorARGB(255, 0, 255, 255);
@@ -264,8 +270,7 @@ struct RendererNode : NodeContext
 					res = NOS_RESULT_FAILED;
 				return res;
 			}
-			if (Imported.Memory.Handle != 0)
-				nosVulkan->DestroyResource(&Imported);
+			DeleteImportedResource();
 			Imported = imported;
 			// Set output texture
 			auto buf = vkss::TexturePinData::Pack(Imported);
@@ -352,6 +357,12 @@ struct RendererNode : NodeContext
 		}
 
 		return NOS_RESULT_SUCCESS;
+	}
+
+	void DeleteImportedResource()
+	{
+		if (Imported.Memory.Handle != 0)
+			nosVulkan->DestroyResource(&Imported);
 	}
 
 	static std::string RiveDataType2NodosType(::rive::DataType riveDataType)
