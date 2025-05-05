@@ -6,8 +6,10 @@
 #include <rive/renderer/render_target.hpp>
 #include <rive/renderer/render_context.hpp>
 #include <rive/renderer/d3d/render_context_d3d_impl.hpp>
+#include <rive/viewmodel/runtime/viewmodel_runtime.hpp>
 #include <rive/file.hpp>
 #include <rive/factory.hpp>
+#include <rive/animation/state_machine_instance.hpp>
 
 #include <nosVulkanSubsystem/nosVulkanSubsystem.h>
 #include <nosVulkanSubsystem/Helpers.hpp>
@@ -15,6 +17,8 @@
 #include <d3d11.h>
 #include <dxgi.h>
 #include <dxgi1_2.h>
+
+#include "rive/scene.hpp"
 
 namespace nos::rive
 {
@@ -175,37 +179,54 @@ struct RendererNode : NodeContext
 		);
 
 		if (FAILED(hr))
-		{
 			return NOS_RESULT_FAILED;
-		}
+
+		// Create the event query
+		D3D11_QUERY_DESC queryDesc = {};
+		queryDesc.Query = D3D11_QUERY_EVENT;
+		queryDesc.MiscFlags = 0;
+
+		Device->CreateQuery(&queryDesc, &Query);
 
 		// Create Rive render context with D3D11 device
 		::rive::gpu::RenderContextD3DImpl::ContextOptions options{
 			.disableRasterizerOrderedViews = false,
-		.disableTypedUAVLoadStore = false};
+			.disableTypedUAVLoadStore = false
+		};
 		RenderContext = ::rive::gpu::RenderContextD3DImpl::MakeContext(Device, Context, options);
+		Renderer = std::make_unique<::rive::RiveRenderer>(RenderContext.get());
+
+		FrameDesc.renderTargetWidth = 1920;
+		FrameDesc.renderTargetHeight = 1080;
+
+		AddPinValueWatcher(NOS_NAME("Resolution"), [this](nos::Buffer const& newVal, std::optional<nos::Buffer> oldValue) {
+			auto& res = *newVal.As<nos::fb::vec2u>();
+			FrameDesc.renderTargetWidth = res.x();
+			FrameDesc.renderTargetHeight = res.y();
+			Recreate();
+		});
+
+		AddPinValueWatcher(NOS_NAME("AssetPath"), [this](nos::Buffer const& newVal, std::optional<nos::Buffer> oldValue) {
+			auto path = newVal.As<const char>();
+			AssetPath = path;
+			Recreate();
+		});
+		
 		return NOS_RESULT_SUCCESS;
 	}
 
-	nosResult ExecuteNode(nosNodeExecuteParams* params) override
-	{
-		Renderer = std::make_unique<::rive::RiveRenderer>(RenderContext.get());
-		::rive::gpu::RenderContext::FrameDescriptor frameDesc{};
-		frameDesc.renderTargetHeight = 1080;
-		frameDesc.renderTargetWidth = 1920;
-		frameDesc.loadAction = ::rive::gpu::LoadAction::preserveRenderTarget;
-		frameDesc.clearColor = ::rive::colorARGB(255, 0, 255, 255);
+	nosResult Recreate() {
+		FrameDesc.loadAction = ::rive::gpu::LoadAction::dontCare;
+		FrameDesc.clearColor = ::rive::colorARGB(255, 0, 255, 255);
 
-		if (!RenderTarget)
+		// Create render target
 		{
 			auto d3dCtx = RenderContext->static_impl_cast<::rive::gpu::RenderContextD3DImpl>();
-			auto sharedTarget = SharedD3DRenderTarget::Create(Device.Get(), frameDesc.renderTargetWidth, frameDesc.renderTargetHeight);
-			auto renderTarget = d3dCtx->makeRenderTarget(frameDesc.renderTargetWidth, frameDesc.renderTargetHeight);
+			auto sharedTarget = SharedD3DRenderTarget::Create(Device.Get(), FrameDesc.renderTargetWidth, FrameDesc.renderTargetHeight);
+			auto renderTarget = d3dCtx->makeRenderTarget(FrameDesc.renderTargetWidth, FrameDesc.renderTargetHeight);
 			auto sharedHandle = sharedTarget ->CreateSharedHandle();
 			
 			renderTarget->setTargetTexture(sharedTarget->GetTexture());
-			auto supportsUAV = renderTarget->targetTextureSupportsUAV();
-			auto a = renderTarget->offscreenTexture();
 			RenderTarget = renderTarget;
 			
 			nosExternalMemoryInfo external = {};
@@ -216,8 +237,8 @@ struct RendererNode : NodeContext
 			external.PID = GetCurrentProcessId();
 			nosResourceShareInfo imported = {};
 			imported.Info.Type = NOS_RESOURCE_TYPE_TEXTURE;
-			imported.Info.Texture.Width = frameDesc.renderTargetWidth;
-			imported.Info.Texture.Height = frameDesc.renderTargetHeight;
+			imported.Info.Texture.Width = FrameDesc.renderTargetWidth;
+			imported.Info.Texture.Height = FrameDesc.renderTargetHeight;
 			imported.Info.Texture.Format = NOS_FORMAT_R8G8B8A8_UNORM;
 			imported.Info.Texture.Usage = nosImageUsage(NOS_IMAGE_USAGE_SAMPLED | NOS_IMAGE_USAGE_TRANSFER_SRC);
 			imported.Info.Texture.FieldType = NOS_TEXTURE_FIELD_TYPE_PROGRESSIVE;
@@ -227,39 +248,34 @@ struct RendererNode : NodeContext
 				.ExternalMemory = external
 			};
 			auto res = nosVulkan->ImportResource(&imported, "Rive Imported Render Target");
-			if (res != NOS_RESULT_SUCCESS)
+			if (res != NOS_RESULT_SUCCESS || imported.Memory.Handle == 0)
 			{
+				nosEngine.LogE("Failed to import Rive render target.");
+				if (res != NOS_RESULT_FAILED)
+					res = NOS_RESULT_FAILED;
 				return res;
 			}
-			if (imported.Memory.Handle == 0)
-			{
-				return NOS_RESULT_FAILED;
-			}
+			if (Imported.Memory.Handle != 0)
+				nosVulkan->DestroyResource(&Imported);
 			Imported = imported;
 			// Set output texture
 			auto buf = vkss::TexturePinData::Pack(Imported);
 			nosEngine.SetPinValueByName(NodeId, NOS_NAME("Output"), buf);
 		}
 
-		// Load and draw Rive file if not already loaded
-		if (!Artboard)
+		// Load Rive Asset
 		{
-			// TODO: Replace with actual Rive file path
-			const char* riveFilePath = "C:/Users/MSA/Downloads/sample.riv";
-			
 			// Load Rive file
 			std::vector<uint8_t> bytes;
 
-			std::filesystem::path path(riveFilePath);
-			if (!std::filesystem::exists(path))
-			{
+			if (!std::filesystem::exists(AssetPath))
 				return NOS_RESULT_FAILED;
-			}
 			// Load file
 			{
-				std::ifstream file(path, std::ios::ate | std::ios::binary);
+				std::ifstream file(AssetPath, std::ios::ate | std::ios::binary);
 				if (!file.is_open())
 				{
+					nosEngine.LogE("Failed to open Rive file: %s", AssetPath.string().c_str());
 					return NOS_RESULT_FAILED;
 				}
 				size_t fileSize = (size_t)file.tellg();
@@ -273,6 +289,7 @@ struct RendererNode : NodeContext
 			
 			if (result != ::rive::ImportResult::success)
 			{
+				nosEngine.LogE("Failed to import Rive file: %s", AssetPath.string().c_str());
 				return NOS_RESULT_FAILED;
 			}
 
@@ -280,26 +297,70 @@ struct RendererNode : NodeContext
 			Artboard = RiveFile->artboardDefault();
 			if (!Artboard)
 			{
+				nosEngine.LogE("Failed to create artboard instance.");
 				return NOS_RESULT_FAILED;
 			}
 
 			// Set artboard size to match render target
-			Artboard->width(frameDesc.renderTargetWidth);
-			Artboard->height(frameDesc.renderTargetHeight);
+			Artboard->width(FrameDesc.renderTargetWidth);
+			Artboard->height(FrameDesc.renderTargetHeight);
+
+			auto viewModelRt = RiveFile->defaultArtboardViewModel(Artboard.get());
+			if (viewModelRt)
+				Properties = viewModelRt->properties();
+			else
+				Properties.clear();
+			for (auto prop : Properties)
+			{
+				auto& propName = prop.name;
+				nosEngine.LogI("Property: %s", propName.c_str());
+			}
+
+			// Fall back to default if named one not found
+			StateMachine = Artboard->defaultStateMachine();
+			
+			// Finally try first available
+			if (!StateMachine && Artboard->stateMachineCount() > 0) {
+				StateMachine = Artboard->stateMachineAt(0);
+			}
 		}
 
-		RenderContext->beginFrame(frameDesc);
+		return NOS_RESULT_SUCCESS;
+	}
+
+	nosResult ExecuteNode(nosNodeExecuteParams* params) override
+	{
+		nos::NodeExecuteParams execParams = params;
+
+		if (!RenderTarget)
+			return NOS_RESULT_FAILED;
+
+		if (!Artboard)
+			return NOS_RESULT_FAILED;
+
+		auto deltaSecs = execParams.GetDeltaTime();
+
+		RenderContext->beginFrame(FrameDesc);
+		
+		// Advance state machine if we have one
+		if (StateMachine) {
+			StateMachine->advance(deltaSecs);
+		}
 
 		// Draw artboard
 		Artboard->draw(Renderer.get());
-		Artboard->advance(0.016f);
+		Artboard->advance(deltaSecs);
 
-		const ::rive::gpu::RenderContext::FlushResources flushRes{
+		const ::rive::gpu::RenderContext::FlushResources flushRes {
 			RenderTarget.get()
 		};
 		RenderContext->flush(flushRes);
 		
-		Renderer.reset();
+		// Wait on the CPU for GPU to finish
+		Context->End(Query.Get());
+		while (S_OK != Context->GetData(Query.Get(), nullptr, 0, 0))
+			;
+
 		return NOS_RESULT_SUCCESS;
 	}
 
@@ -312,6 +373,15 @@ struct RendererNode : NodeContext
 
 	ComPtr<ID3D11Device> Device;
 	ComPtr<ID3D11DeviceContext> Context;
+	ComPtr<ID3D11Query> Query = nullptr;
+
+	::rive::gpu::RenderContext::FrameDescriptor FrameDesc;
+	std::filesystem::path AssetPath;
+
+	// Data binds:
+	std::vector<::rive::PropertyData> Properties;
+
+	std::unique_ptr<::rive::StateMachineInstance> StateMachine;
 };
 
 nosResult RegisterRenderer(nosNodeFunctions* node)

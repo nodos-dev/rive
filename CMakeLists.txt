@@ -15,7 +15,7 @@ foreach(module_name_version ${MODULE_DEPENDENCIES})
     list(APPEND MODULE_DEPENDENCIES_TARGETS ${DEP_${dep_idx}})
 endforeach()
 
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/External/rive-lib")
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/External/rive-lib" "${CMAKE_CURRENT_BINARY_DIR}/External/rive-lib")
 nos_group_targets("rive-lib" "External")
 list(APPEND MODULE_DEPENDENCIES_TARGETS ${NOS_PLUGIN_SDK_TARGET} rive-lib dxgi d3d11 d3dcompiler.lib)
 

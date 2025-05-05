@@ -11,11 +11,28 @@
 				"contents_type": "Job",
 				"pins": [
 					{
+						"name": "Resolution",
+						"display_name": "Resolution",
+						"type_name": "nos.fb.vec2u",
+						"show_as": "PROPERTY",
+						"can_show_as": "INPUT_PIN_OR_PROPERTY",
+						"data": {
+							"x": 1920,
+							"y": 1080
+						}
+					},
+					{
 						"name": "AssetPath",
 						"display_name": "Asset Path",
 						"type_name": "string",
 						"show_as": "PROPERTY",
-						"can_show_as": "INPUT_PIN_OR_PROPERTY"
+						"can_show_as": "INPUT_PIN_OR_PROPERTY",
+						"visualizer": {
+							"type": "FILE_PICKER",
+							"file_extensions": [
+								"riv"
+							]
+						}
 					},
 					{
 						"name": "Time",
