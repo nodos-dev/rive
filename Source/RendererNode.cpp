@@ -204,9 +204,14 @@ struct RendererNode : NodeContext
 			std::string_view pinName = pin->name()->string_view();
 			if (pinName == "Resolution" || pinName == "AssetPath" || pinName == "Output")
 				continue;
-			CreatedPins.push_back(*pin->id());
+			CreatedPin created{
+				.PinId = *pin->id(),
+				.Name = pinName.data(),
+				.NodosType = pin->type_name()->str(),
+			};
+			CreatedPins.push_back(std::move(created));
+			SetPinOrphanState(nos::Name(pinName), fb::PinOrphanStateType::ACTIVE);
 		}
-		RecreatePins();
 
 		AddPinValueWatcher(NOS_NAME("Resolution"), [this](nos::Buffer const& newVal, std::optional<nos::Buffer> oldValue) {
 			auto& res = *newVal.As<nos::fb::vec2u>();
@@ -227,6 +232,7 @@ struct RendererNode : NodeContext
 	nosResult Recreate() {
 		FrameDesc.loadAction = ::rive::gpu::LoadAction::dontCare;
 		FrameDesc.clearColor = ::rive::colorARGB(255, 0, 255, 255);
+		StateMachine = nullptr;
 
 		// Create render target
 		{
@@ -354,26 +360,26 @@ struct RendererNode : NodeContext
 		return NOS_RESULT_SUCCESS;
 	}
 
-	static nos::Name RiveDataType2NodosType(::rive::DataType riveDataType)
+	static std::string RiveDataType2NodosType(::rive::DataType riveDataType)
 	{
 		switch (riveDataType)
 		{
 		case ::rive::DataType::string:
-			return NOS_NAME("string");
+			return "string";
 		case ::rive::DataType::number:
-			return NOS_NAME("float");
+			return "float";
 		case ::rive::DataType::boolean:
-			return NOS_NAME("bool");
+			return "bool";
 		case ::rive::DataType::trigger:
-			return NOS_NAME("nos.exe");
+			return "nos.exe";
 		case ::rive::DataType::color:
 		case ::rive::DataType::list:
 		case ::rive::DataType::enumType:
 		case ::rive::DataType::viewModel:
 		case ::rive::DataType::none:
-			return NOS_NAME("nos.Generic");
+			return "nos.Generic";
 		}
-		return NOS_NAME("nos.Generic");
+		return "nos.Generic";
 	}
 
 	void RecreatePins()
@@ -382,18 +388,35 @@ struct RendererNode : NodeContext
 		std::vector<flatbuffers::Offset<nos::fb::Pin>> pinsToAdd = {};
 
 		std::vector<nos::fb::UUID> pinsToDelete;
+		std::unordered_set<std::string> skipCreation;
 		for (auto& pin : CreatedPins)
-			pinsToDelete.push_back(pin);
+		{
+			auto it = Bindings.find(pin.Name);
+			if (it != Bindings.end())
+				if (pin.NodosType == RiveDataType2NodosType(it->second.RiveType))
+				{
+					skipCreation.insert(pin.Name);
+					continue;
+				}
+			pinsToDelete.push_back(pin.PinId);
+		}
 		CreatedPins.clear();
 		
 		for (auto& [name, prop] : Bindings)
 		{
-			nos::fb::TPin pin{};
 			uuid id = nosEngine.GenerateID();
+			auto nodosType = RiveDataType2NodosType(prop.RiveType);
+			CreatedPins.push_back(CreatedPin{
+				.PinId = id,
+				.Name = name,
+				.NodosType = nodosType,
+			});
+			if (skipCreation.contains(name))
+				continue;
+			nos::fb::TPin pin{};
 			pin.id = id;
-			CreatedPins.push_back(id);
 			pin.name = prop.Name.c_str();
-			pin.type_name = RiveDataType2NodosType(prop.RiveType);
+			pin.type_name = nodosType;
 			pin.show_as = fb::ShowAs::INPUT_PIN;
 			pin.can_show_as = fb::CanShowAs::INPUT_PIN_OR_PROPERTY;
 			pin.display_name = prop.Name.c_str();
@@ -429,19 +452,20 @@ struct RendererNode : NodeContext
 		for (auto& [name, binding] : Bindings)
 		{
 			auto pinName = nos::Name(name);
-			auto pin = execParams[pinName];
 			if (!execParams.contains(pinName))
 				continue;
+			auto pinInfo = execParams[pinName];
+			auto pinBuf = pinInfo.Data;
 			switch (binding.RiveType)
 			{
 			case ::rive::DataType::string:
-				binding.Value->as<::rive::ViewModelInstanceString>()->propertyValue(execParams.GetPinData<const char>(pinName));
+				binding.Value->as<::rive::ViewModelInstanceString>()->propertyValue(static_cast<const char*>(pinBuf->Data));
 				break;
 			case ::rive::DataType::number:
-				binding.Value->as<::rive::ViewModelInstanceNumber>()->propertyValue(*execParams.GetPinData<float>(pinName));
+				binding.Value->as<::rive::ViewModelInstanceNumber>()->propertyValue(*static_cast<float*>(pinBuf->Data));
 				break;
 			case ::rive::DataType::boolean:
-				binding.Value->as<::rive::ViewModelInstanceBoolean>()->propertyValue(*execParams.GetPinData<bool>(pinName));
+				binding.Value->as<::rive::ViewModelInstanceBoolean>()->propertyValue(*static_cast<bool*>(pinBuf->Data));
 				break;
 			default:
 				break;
@@ -487,7 +511,13 @@ struct RendererNode : NodeContext
 		::rive::ViewModelInstanceValue* Value;
 	};
 	std::map<std::string, DataBinding> Bindings;
-	std::vector<uuid> CreatedPins;
+	struct CreatedPin
+	{
+		uuid PinId;
+		std::string Name;
+		std::string NodosType;
+	};
+	std::vector<CreatedPin> CreatedPins;
 
 	std::unique_ptr<::rive::StateMachineInstance> StateMachine;
 };
