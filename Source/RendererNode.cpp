@@ -199,6 +199,15 @@ struct RendererNode : NodeContext
 		FrameDesc.renderTargetWidth = 1920;
 		FrameDesc.renderTargetHeight = 1080;
 
+		// Detect created input pins and delete them.
+		for (auto* pin : *node->pins()) {
+			std::string_view pinName = pin->name()->string_view();
+			if (pinName == "Resolution" || pinName == "AssetPath" || pinName == "Output")
+				continue;
+			CreatedPins.push_back(*pin->id());
+		}
+		RecreatePins();
+
 		AddPinValueWatcher(NOS_NAME("Resolution"), [this](nos::Buffer const& newVal, std::optional<nos::Buffer> oldValue) {
 			auto& res = *newVal.As<nos::fb::vec2u>();
 			FrameDesc.renderTargetWidth = res.x();
@@ -239,7 +248,7 @@ struct RendererNode : NodeContext
 			imported.Info.Type = NOS_RESOURCE_TYPE_TEXTURE;
 			imported.Info.Texture.Width = FrameDesc.renderTargetWidth;
 			imported.Info.Texture.Height = FrameDesc.renderTargetHeight;
-			imported.Info.Texture.Format = NOS_FORMAT_R8G8B8A8_UNORM;
+			imported.Info.Texture.Format = NOS_FORMAT_R8G8B8A8_SRGB;
 			imported.Info.Texture.Usage = nosImageUsage(NOS_IMAGE_USAGE_SAMPLED | NOS_IMAGE_USAGE_TRANSFER_SRC);
 			imported.Info.Texture.FieldType = NOS_TEXTURE_FIELD_TYPE_PROGRESSIVE;
 			imported.Memory = {
@@ -305,16 +314,33 @@ struct RendererNode : NodeContext
 			Artboard->width(FrameDesc.renderTargetWidth);
 			Artboard->height(FrameDesc.renderTargetHeight);
 
-			auto viewModelRt = RiveFile->defaultArtboardViewModel(Artboard.get());
-			if (viewModelRt)
-				Properties = viewModelRt->properties();
-			else
-				Properties.clear();
-			for (auto prop : Properties)
+			auto viewModelInstance = RiveFile->createDefaultViewModelInstance(Artboard.get());
+			Bindings.clear();
+			if (viewModelInstance)
 			{
-				auto& propName = prop.name;
-				nosEngine.LogI("Property: %s", propName.c_str());
+				Artboard->bindViewModelInstance(viewModelInstance);
+				auto vmName = viewModelInstance->name();
+				auto vmiPropValues = viewModelInstance->propertyValues();
+				for (auto& val : vmiPropValues)
+				{
+					auto& valueName = val->name();
+					auto bindingName = vmName.empty() ? valueName : vmName + " " + valueName;
+					nosEngine.LogI("ViewModel Property: %s", bindingName.c_str());
+					::rive::DataType dataType{};
+					if (val->is<::rive::ViewModelInstanceBoolean>())
+						dataType = ::rive::DataType::boolean;
+					else if (val->is<::rive::ViewModelInstanceNumber>())
+						dataType = ::rive::DataType::number;
+					else if (val->is<::rive::ViewModelInstanceString>())
+						dataType = ::rive::DataType::string;
+					else if (val->is<::rive::ViewModelInstanceTrigger>())
+						dataType = ::rive::DataType::trigger;
+					else
+						continue;
+					Bindings[bindingName] = { bindingName, dataType, val };
+				}
 			}
+			RecreatePins();
 
 			// Fall back to default if named one not found
 			StateMachine = Artboard->defaultStateMachine();
@@ -326,6 +352,57 @@ struct RendererNode : NodeContext
 		}
 
 		return NOS_RESULT_SUCCESS;
+	}
+
+	static nos::Name RiveDataType2NodosType(::rive::DataType riveDataType)
+	{
+		switch (riveDataType)
+		{
+		case ::rive::DataType::string:
+			return NOS_NAME("string");
+		case ::rive::DataType::number:
+			return NOS_NAME("float");
+		case ::rive::DataType::boolean:
+			return NOS_NAME("bool");
+		case ::rive::DataType::trigger:
+			return NOS_NAME("nos.exe");
+		case ::rive::DataType::color:
+		case ::rive::DataType::list:
+		case ::rive::DataType::enumType:
+		case ::rive::DataType::viewModel:
+		case ::rive::DataType::none:
+			return NOS_NAME("nos.Generic");
+		}
+		return NOS_NAME("nos.Generic");
+	}
+
+	void RecreatePins()
+	{
+		flatbuffers::FlatBufferBuilder fbb;
+		std::vector<flatbuffers::Offset<nos::fb::Pin>> pinsToAdd = {};
+
+		std::vector<nos::fb::UUID> pinsToDelete;
+		for (auto& pin : CreatedPins)
+			pinsToDelete.push_back(pin);
+		CreatedPins.clear();
+		
+		for (auto& [name, prop] : Bindings)
+		{
+			nos::fb::TPin pin{};
+			uuid id = nosEngine.GenerateID();
+			pin.id = id;
+			CreatedPins.push_back(id);
+			pin.name = prop.Name.c_str();
+			pin.type_name = RiveDataType2NodosType(prop.RiveType);
+			pin.show_as = fb::ShowAs::INPUT_PIN;
+			pin.can_show_as = fb::CanShowAs::INPUT_PIN_OR_PROPERTY;
+			pin.display_name = prop.Name.c_str();
+			pinsToAdd.push_back(fb::CreatePin(fbb, &pin));	
+		}
+
+		HandleEvent(CreateAppEvent(
+			fbb,
+			CreatePartialNodeUpdateDirect(fbb, &NodeId, nos::ClearFlags::NONE, &pinsToDelete, &pinsToAdd)));
 	}
 
 	nosResult ExecuteNode(nosNodeExecuteParams* params) override
@@ -344,7 +421,31 @@ struct RendererNode : NodeContext
 		
 		// Advance state machine if we have one
 		if (StateMachine) {
+			auto stateMachineName = StateMachine->name();
 			StateMachine->advance(deltaSecs);
+		}
+
+		// Data binding:
+		for (auto& [name, binding] : Bindings)
+		{
+			auto pinName = nos::Name(name);
+			auto pin = execParams[pinName];
+			if (!execParams.contains(pinName))
+				continue;
+			switch (binding.RiveType)
+			{
+			case ::rive::DataType::string:
+				binding.Value->as<::rive::ViewModelInstanceString>()->propertyValue(execParams.GetPinData<const char>(pinName));
+				break;
+			case ::rive::DataType::number:
+				binding.Value->as<::rive::ViewModelInstanceNumber>()->propertyValue(*execParams.GetPinData<float>(pinName));
+				break;
+			case ::rive::DataType::boolean:
+				binding.Value->as<::rive::ViewModelInstanceBoolean>()->propertyValue(*execParams.GetPinData<bool>(pinName));
+				break;
+			default:
+				break;
+			}
 		}
 
 		// Draw artboard
@@ -379,7 +480,14 @@ struct RendererNode : NodeContext
 	std::filesystem::path AssetPath;
 
 	// Data binds:
-	std::vector<::rive::PropertyData> Properties;
+	struct DataBinding
+	{
+		std::string Name;
+		::rive::DataType RiveType;
+		::rive::ViewModelInstanceValue* Value;
+	};
+	std::map<std::string, DataBinding> Bindings;
+	std::vector<uuid> CreatedPins;
 
 	std::unique_ptr<::rive::StateMachineInstance> StateMachine;
 };

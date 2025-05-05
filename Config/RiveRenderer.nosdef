@@ -8,6 +8,7 @@
 			},
 			"node": {
 				"class_name": "Renderer",
+				"always_execute": true,
 				"contents_type": "Job",
 				"pins": [
 					{
@@ -33,13 +34,6 @@
 								"riv"
 							]
 						}
-					},
-					{
-						"name": "Time",
-						"display_name": "Time",
-						"type_name": "float",
-						"show_as": "INPUT_PIN",
-						"can_show_as": "INPUT_PIN_ONLY"
 					},
 					{
 						"name": "Output",
