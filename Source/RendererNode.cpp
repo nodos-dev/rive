@@ -199,9 +199,6 @@ struct RendererNode : NodeContext
 		};
 		RenderContext = ::rive::gpu::RenderContextD3DImpl::MakeContext(Device, Context, options);
 
-		FrameDesc.renderTargetWidth = 1920;
-		FrameDesc.renderTargetHeight = 1080;
-
 		// Detect created input pins and delete them.
 		for (auto* pin : *node->pins()) {
 			std::string_view pinName = pin->name()->string_view();
@@ -220,6 +217,8 @@ struct RendererNode : NodeContext
 		AddPinValueWatcher(NOS_NAME("AssetPath"), [this](nos::Buffer const& newVal, std::optional<nos::Buffer> oldValue) {
 			auto path = newVal.As<const char>();
 			AssetPath = path;
+			FrameDesc.renderTargetWidth = 0;
+			FrameDesc.renderTargetHeight = 0;
 			Recreate();
 		});
 		
@@ -237,49 +236,6 @@ struct RendererNode : NodeContext
 		FrameDesc.clearColor = ::rive::colorARGB(0, 0, 0, 0);
 		StateMachine.reset();
 		Renderer = std::make_unique<::rive::RiveRenderer>(RenderContext.get());
-
-		// Create render target
-		{
-			auto d3dCtx = RenderContext->static_impl_cast<::rive::gpu::RenderContextD3DImpl>();
-			auto sharedTarget = SharedD3DRenderTarget::Create(Device.Get(), FrameDesc.renderTargetWidth, FrameDesc.renderTargetHeight);
-			auto renderTarget = d3dCtx->makeRenderTarget(FrameDesc.renderTargetWidth, FrameDesc.renderTargetHeight);
-			auto sharedHandle = sharedTarget ->CreateSharedHandle();
-			
-			renderTarget->setTargetTexture(sharedTarget->GetTexture());
-			RenderTarget = renderTarget;
-			
-			nosExternalMemoryInfo external = {};
-			external.HandleType = NOS_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE;
-			external.Handle = reinterpret_cast<uint64_t>(sharedHandle);
-			external.Offset = 0;
-			external.AllocationSize = sharedTarget->GetAllocationSize();
-			external.PID = GetCurrentProcessId();
-			nosResourceShareInfo imported = {};
-			imported.Info.Type = NOS_RESOURCE_TYPE_TEXTURE;
-			imported.Info.Texture.Width = FrameDesc.renderTargetWidth;
-			imported.Info.Texture.Height = FrameDesc.renderTargetHeight;
-			imported.Info.Texture.Format = NOS_FORMAT_R8G8B8A8_SRGB;
-			imported.Info.Texture.Usage = nosImageUsage(NOS_IMAGE_USAGE_SAMPLED | NOS_IMAGE_USAGE_TRANSFER_SRC);
-			imported.Info.Texture.FieldType = NOS_TEXTURE_FIELD_TYPE_PROGRESSIVE;
-			imported.Memory = {
-				.Handle = 0, // Let Vulkan assign
-				.Size = sharedTarget->GetAllocationSize(),   // Let Vulkan assign
-				.ExternalMemory = external
-			};
-			auto res = nosVulkan->ImportResource(&imported, "Rive Imported Render Target");
-			if (res != NOS_RESULT_SUCCESS || imported.Memory.Handle == 0)
-			{
-				nosEngine.LogE("Failed to import Rive render target.");
-				if (res != NOS_RESULT_FAILED)
-					res = NOS_RESULT_FAILED;
-				return res;
-			}
-			DeleteImportedResource();
-			Imported = imported;
-			// Set output texture
-			auto buf = vkss::TexturePinData::Pack(Imported);
-			nosEngine.SetPinValueByName(NodeId, NOS_NAME("Output"), buf);
-		}
 
 		// Load Rive Asset
 		{
@@ -317,6 +273,58 @@ struct RendererNode : NodeContext
 			{
 				nosEngine.LogE("Failed to create artboard instance.");
 				return NOS_RESULT_FAILED;
+			}
+
+			auto origWidth = Artboard->originalWidth();
+			auto origHeight = Artboard->originalHeight();
+
+			if (FrameDesc.renderTargetHeight == 0 || FrameDesc.renderTargetWidth == 0)
+			{
+				nos::fb::vec2u size(origWidth, origHeight);
+				nosEngine.SetPinValueByName(NodeId, NOS_NAME("Resolution"), nos::Buffer::From(size));
+				return NOS_RESULT_PENDING;
+			}
+			// Create render target
+			{
+				auto d3dCtx = RenderContext->static_impl_cast<::rive::gpu::RenderContextD3DImpl>();
+				auto sharedTarget = SharedD3DRenderTarget::Create(Device.Get(), FrameDesc.renderTargetWidth, FrameDesc.renderTargetHeight);
+				auto renderTarget = d3dCtx->makeRenderTarget(FrameDesc.renderTargetWidth, FrameDesc.renderTargetHeight);
+				auto sharedHandle = sharedTarget ->CreateSharedHandle();
+
+				renderTarget->setTargetTexture(sharedTarget->GetTexture());
+				RenderTarget = renderTarget;
+
+				nosExternalMemoryInfo external = {};
+				external.HandleType = NOS_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE;
+				external.Handle = reinterpret_cast<uint64_t>(sharedHandle);
+				external.Offset = 0;
+				external.AllocationSize = sharedTarget->GetAllocationSize();
+				external.PID = GetCurrentProcessId();
+				nosResourceShareInfo imported = {};
+				imported.Info.Type = NOS_RESOURCE_TYPE_TEXTURE;
+				imported.Info.Texture.Width = FrameDesc.renderTargetWidth;
+				imported.Info.Texture.Height = FrameDesc.renderTargetHeight;
+				imported.Info.Texture.Format = NOS_FORMAT_R8G8B8A8_SRGB;
+				imported.Info.Texture.Usage = nosImageUsage(NOS_IMAGE_USAGE_SAMPLED | NOS_IMAGE_USAGE_TRANSFER_SRC);
+				imported.Info.Texture.FieldType = NOS_TEXTURE_FIELD_TYPE_PROGRESSIVE;
+				imported.Memory = {
+					.Handle = 0, // Let Vulkan assign
+					.Size = sharedTarget->GetAllocationSize(),   // Let Vulkan assign
+					.ExternalMemory = external
+				};
+				auto res = nosVulkan->ImportResource(&imported, "Rive Imported Render Target");
+				if (res != NOS_RESULT_SUCCESS || imported.Memory.Handle == 0)
+				{
+					nosEngine.LogE("Failed to import Rive render target.");
+					if (res != NOS_RESULT_FAILED)
+						res = NOS_RESULT_FAILED;
+					return res;
+				}
+				DeleteImportedResource();
+				Imported = imported;
+				// Set output texture
+				auto buf = vkss::TexturePinData::Pack(Imported);
+				nosEngine.SetPinValueByName(NodeId, NOS_NAME("Output"), buf);
 			}
 
 			// Set artboard size to match render target
@@ -634,7 +642,8 @@ struct RendererNode : NodeContext
 				prefix = "SM_";
 				break;
 			}
-			return prefix + (ParentName.empty() ? "" : ParentName + "_") + Name;
+			auto ret = prefix + (ParentName.empty() ? "" : ParentName + "_") + Name;
+			return ret;
 		}
 	};
 	std::map<std::string, DataBinding> Bindings;
