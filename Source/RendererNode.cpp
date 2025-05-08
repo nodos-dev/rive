@@ -334,8 +334,8 @@ struct RendererNode : NodeContext
 				return NOS_RESULT_FAILED;
 			}
 
-			auto origWidth = Artboard->originalWidth();
-			auto origHeight = Artboard->originalHeight();
+			auto origWidth = Artboard->width();
+			auto origHeight = Artboard->height();
 
 			if (FrameDesc.renderTargetHeight == 0 || FrameDesc.renderTargetWidth == 0)
 			{
@@ -594,7 +594,8 @@ struct RendererNode : NodeContext
 				continue;
 			auto pinInfo = execParams[pinName];
 			auto pinBuf = pinInfo.Data;
-			binding.SetData(binding, pinBuf);
+			if (pinInfo.Dirty == NOS_TRUE)
+				binding.SetData(binding, pinBuf);
 		}
 
 		// Draw artboard
