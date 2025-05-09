@@ -66,36 +66,6 @@ public:
 		return ::rive::rcp<SharedD3DRenderTarget>(new SharedD3DRenderTarget(width, height, tex));
 	}
 
-	size_t GetAllocationSize() const
-	{
-		D3D11_TEXTURE2D_DESC desc;
-		Texture->GetDesc(&desc);
-
-		UINT64 totalSize = 0;
-		UINT width = desc.Width;
-		UINT height = desc.Height;
-		UINT mipLevels = desc.MipLevels ? desc.MipLevels : 1;
-
-		for (UINT mip = 0; mip < mipLevels; ++mip)
-		{
-			UINT w = std::max(1u, width >> mip);
-			UINT h = std::max(1u, height >> mip);
-			UINT rowPitch = 0;
-			UINT slicePitch = 0;
-
-			// You can use DXGI format helpers here
-			DXGI_FORMAT fmt = desc.Format;
-
-			// Estimate pitch (uncompressed formats)
-			UINT bpp = 32;
-			rowPitch = (w * bpp + 7) / 8;
-			slicePitch = rowPitch * h;
-
-			totalSize += slicePitch * desc.ArraySize;
-		}
-		return totalSize;
-	}
-
 	ComPtr<ID3D11Texture2D> GetTexture() const { return Texture; }
 
 	HANDLE CreateSharedHandle()
@@ -354,10 +324,9 @@ struct RendererNode : NodeContext
 				RenderTarget = renderTarget;
 
 				nosExternalMemoryInfo external = {};
-				external.HandleType = NOS_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE;
+				external.HandleType = NOS_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE;
 				external.Handle = reinterpret_cast<uint64_t>(sharedHandle);
 				external.Offset = 0;
-				external.AllocationSize = sharedTarget->GetAllocationSize();
 				external.PID = GetCurrentProcessId();
 				nosResourceShareInfo imported = {};
 				imported.Info.Type = NOS_RESOURCE_TYPE_TEXTURE;
@@ -368,7 +337,7 @@ struct RendererNode : NodeContext
 				imported.Info.Texture.FieldType = NOS_TEXTURE_FIELD_TYPE_PROGRESSIVE;
 				imported.Memory = {
 					.Handle = 0, // Let Vulkan assign
-					.Size = sharedTarget->GetAllocationSize(),   // Let Vulkan assign
+					.Size = 0,   // Let Vulkan assign
 					.ExternalMemory = external
 				};
 				auto res = nosVulkan->ImportResource(&imported, "Rive Imported Render Target");

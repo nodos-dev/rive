@@ -4,7 +4,7 @@ if (NOT DEFINED NOS_SDK_DIR)
     message(FATAL_ERROR "Nodos SDK with version ${USE_NOS_SDK_VERSION} not found, please either install it or choose different version")
 endif()
 
-set(MODULE_DEPENDENCIES "nos.sys.vulkan-6.23")
+set(MODULE_DEPENDENCIES "nos.sys.vulkan-6.25")
 set(dep_idx 0)
 foreach(module_name_version ${MODULE_DEPENDENCIES})
     # module_name_version: <MODULE_NAME>-<MODULE_VERSION>
