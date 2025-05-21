@@ -103,10 +103,10 @@ private:
 
 struct RendererNode : NodeContext
 {
-	using NodeContext::NodeContext;
-
-	nosResult OnCreate(nosFbNodePtr node) override
+	RendererNode(nosFbNodePtr node) : NodeContext(node)
 	{
+		IsOk = false;
+
 		// Create D3D11 device and context
 		UINT createDeviceFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 #ifdef _DEBUG
@@ -137,7 +137,8 @@ struct RendererNode : NodeContext
 
 		if (!adapter)
 		{
-			return NOS_RESULT_FAILED; // No discrete GPU found
+			SetNodeStatusMessage("No discrete GPU found.", nos::fb::NodeStatusMessageType::FAILURE);
+			return; // No discrete GPU found
 		}
 
 		hr = D3D11CreateDevice(
@@ -154,7 +155,10 @@ struct RendererNode : NodeContext
 		);
 
 		if (FAILED(hr))
-			return NOS_RESULT_FAILED;
+		{
+			SetNodeStatusMessage("Unable to create GPU device.", nos::fb::NodeStatusMessageType::FAILURE);
+			return;
+		}
 
 		// Create the event query
 		D3D11_QUERY_DESC queryDesc = {};
@@ -183,7 +187,7 @@ struct RendererNode : NodeContext
 			FrameDesc.renderTargetWidth = res.x();
 			FrameDesc.renderTargetHeight = res.y();
 			Recreate();
-		});
+			});
 
 		AddPinValueWatcher(NOS_NAME("AssetPath"), [this](nos::Buffer const& newVal, std::optional<nos::Buffer> oldValue) {
 			auto path = newVal.As<const char>();
@@ -191,15 +195,15 @@ struct RendererNode : NodeContext
 			FrameDesc.renderTargetWidth = 0;
 			FrameDesc.renderTargetHeight = 0;
 			Recreate();
-		});
-		
-		return NOS_RESULT_SUCCESS;
+			});
+
+		IsOk = true;
+		return;
 	}
 
-	nosResult OnDestroy() override
+	~RendererNode()
 	{
 		DeleteImportedResource();
-		return NOS_RESULT_SUCCESS;
 	}
 
 	void SetupViewModelInputs()
@@ -351,7 +355,7 @@ struct RendererNode : NodeContext
 				DeleteImportedResource();
 				Imported = imported;
 				// Set output texture
-				auto buf = vkss::TexturePinData::Pack(Imported);
+				auto buf = nos::Buffer::From(vkss::ConvertTextureInfo(Imported));
 				nosEngine.SetPinValueByName(NodeId, NOS_NAME("Output"), buf);
 			}
 
@@ -537,6 +541,9 @@ struct RendererNode : NodeContext
 
 	nosResult ExecuteNode(nosNodeExecuteParams* params) override
 	{
+		if (!IsOk)
+			return NOS_RESULT_FAILED;
+
 		nos::NodeExecuteParams execParams = params;
 
 		if (!RenderTarget)
@@ -563,8 +570,9 @@ struct RendererNode : NodeContext
 				continue;
 			auto pinInfo = execParams[pinName];
 			auto pinBuf = pinInfo.Data;
-			if (pinInfo.Dirty == NOS_TRUE)
-				binding.SetData(binding, pinBuf);
+			// Nodos 1.4:
+			// if (pinInfo.Dirty == NOS_TRUE)
+			binding.SetData(binding, pinBuf);
 		}
 
 		// Draw artboard
@@ -640,6 +648,8 @@ struct RendererNode : NodeContext
 	std::map<std::string, DataBinding> Bindings;
 
 	std::unique_ptr<::rive::StateMachineInstance> StateMachine;
+
+	bool IsOk = false;
 };
 
 nosResult RegisterRenderer(nosNodeFunctions* node)

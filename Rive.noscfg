@@ -2,14 +2,14 @@
 	"info": {
 		"id": {
 			"name": "nos.rive",
-			"version": "0.2.2"
+			"version": "0.3.0"
 		},
 		"display_name": "Rive Renderer",
 		"description": "",
 		"dependencies": [
 			{
 				"name": "nos.sys.vulkan",
-				"version": "6.25"
+				"version": "6.5"
 			}
 		]
 	},
