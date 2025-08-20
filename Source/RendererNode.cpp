@@ -1,5 +1,4 @@
-﻿#include <Nodos/PluginAPI.h>
-#include <Nodos/PluginHelpers.hpp>
+﻿#include <Nodos/Plugin.hpp>
 
 #include <rive/artboard.hpp>
 #include <rive/renderer/rive_renderer.hpp>

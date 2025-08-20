@@ -1,6 +1,4 @@
-#include <Nodos/PluginAPI.h>
-#include <Nodos/PluginHelpers.hpp>
-#include <Nodos/Helpers.hpp>
+#include <Nodos/Plugin.hpp>
 
 #include <nosVulkanSubsystem/nosVulkanSubsystem.h>
 
