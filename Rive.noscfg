@@ -6,6 +6,7 @@
 		},
 		"display_name": "Rive Renderer",
 		"description": "",
+		"category": "Animation",
 		"dependencies": [
 			{
 				"name": "nos.sys.vulkan",
