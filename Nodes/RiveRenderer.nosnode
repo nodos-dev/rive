@@ -29,12 +29,15 @@
 						"type_name": "string",
 						"show_as": "PROPERTY",
 						"can_show_as": "INPUT_PIN_OR_PROPERTY",
-						"visualizer": {
-							"type": "FILE_PICKER",
-							"file_extensions": [
-								"riv"
-							]
-						}
+						"visualizers": [
+							{
+								"visualizer_subfield_path": "",
+								"type": "FILE_PICKER",
+								"file_extensions": [
+									"riv"
+								]
+							}
+						]
 					},
 					{
 						"name": "Output",
