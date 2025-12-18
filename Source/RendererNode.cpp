@@ -15,8 +15,8 @@
 #include <rive/animation/state_machine_trigger.hpp>
 #include <rive/math/vec2d.hpp>
 
-#include <nosVulkanSubsystem/nosVulkanSubsystem.h>
-#include <nosVulkanSubsystem/Helpers.hpp>
+#include <nosSysVulkan/nosVulkanSubsystem.h>
+#include <nosSysVulkan/Helpers.hpp>
 
 #include <d3d11.h>
 #include <dxgi.h>

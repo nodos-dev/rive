@@ -13,5 +13,6 @@
 			}
 		]
 	},
-	"binary_path": "Binaries/nosRive"
+	"binary_path": "Binaries/nosRive",
+	"sdk_version": "40.0"
 }
