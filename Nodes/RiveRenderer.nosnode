@@ -1,53 +1,53 @@
 {
-    "nodes": [
-        {
-            "class_name": "Renderer",
-            "menu_info": {
-                "category": "UI",
-                "display_name": "Rive Renderer"
-            },
-            "node": {
-                "class_name": "Renderer",
-                "display_name": "Rive Renderer",
-                "always_execute": true,
-                "contents_type": "Job",
-                "pins": [
-                    {
-                        "name": "Resolution",
-                        "display_name": "Resolution",
-                        "type_name": "nos.fb.vec2u",
-                        "show_as": "PROPERTY",
-                        "can_show_as": "INPUT_PIN_OR_PROPERTY",
-                        "data": {
-                            "x": 1920,
-                            "y": 1080
-                        }
-                    },
-                    {
-                        "name": "AssetPath",
-                        "display_name": "Asset Path",
-                        "type_name": "string",
-                        "show_as": "PROPERTY",
-                        "can_show_as": "INPUT_PIN_OR_PROPERTY",
-                        "visualizers": [
-                            {
-                                "visualizer_subfield_path": "",
-                                "type": "FILE_PICKER",
-                                "file_extensions": [
-                                    "riv"
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        "name": "Output",
-                        "type_name": "nos.sys.vulkan.Texture",
-                        "show_as": "OUTPUT_PIN",
-                        "can_show_as": "OUTPUT_PIN_ONLY"
-                    }
-                ]
-            }
-        }
-    ],
-    "schema_version": "1.4-v1"
+	"nodes": [
+		{
+			"class_name": "Renderer",
+			"menu_info": {
+				"category": "UI",
+				"display_name": "Rive Renderer"
+			},
+			"node": {
+				"class_name": "Renderer",
+				"display_name": "Rive Renderer",
+				"always_execute": true,
+				"contents_type": "Job",
+				"pins": [
+					{
+						"name": "Resolution",
+						"display_name": "Resolution",
+						"type_name": "nos.fb.vec2u",
+						"show_as": "PROPERTY",
+						"can_show_as": "INPUT_PIN_OR_PROPERTY",
+						"data": {
+							"x": 1920,
+							"y": 1080
+						}
+					},
+					{
+						"name": "AssetPath",
+						"display_name": "Asset Path",
+						"type_name": "string",
+						"show_as": "PROPERTY",
+						"can_show_as": "INPUT_PIN_OR_PROPERTY",
+						"visualizers": [
+							{
+								"visualizer_subfield_path": "",
+								"type": "FILE_PICKER",
+								"file_extensions": [
+									"riv"
+								]
+							}
+						]
+					},
+					{
+						"name": "Output",
+						"type_name": "nos.sys.vulkan.Texture",
+						"show_as": "OUTPUT_PIN",
+						"can_show_as": "OUTPUT_PIN_ONLY"
+					}
+				]
+			}
+		}
+	],
+	"schema_version": "1.4-v1"
 }
