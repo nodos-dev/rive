@@ -2,18 +2,18 @@
 	"info": {
 		"id": {
 			"name": "nos.rive",
-			"version": "0.14.0"
+			"version": "1.0.0"
 		},
 		"display_name": "Rive Renderer",
 		"description": "",
 		"dependencies": [
 			{
 				"name": "nos.sys.vulkan",
-				"version": "7.1"
+				"version": "8.0"
 			}
 		]
 	},
 	"binary_path": "Binaries/nosRive",
-	"sdk_version": "40.0",
+	"sdk_version": "41.0",
 	"schema_version": "1.4-v1"
 }

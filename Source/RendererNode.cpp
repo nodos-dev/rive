@@ -197,7 +197,6 @@ struct RendererNode : NodeContext
 
 	nosResult OnDestroy() override
 	{
-		DeleteImportedResource();
 		return NOS_RESULT_SUCCESS;
 	}
 
@@ -230,18 +229,18 @@ struct RendererNode : NodeContext
 					.Name = bindingName,
 					.RiveType = dataType,
 					.Type = DataBindType::ViewModel,
-					.SetData = [this, val](DataBinding const& binding, const nosBuffer* pinBuf)
+					.SetData = [this, val](DataBinding const& binding, ObjectDataView const& pinBuf)
 					{
 						switch (binding.RiveType)
 						{
 						case ::rive::DataType::string:
-							val->as<::rive::ViewModelInstanceString>()->propertyValue(static_cast<const char*>(pinBuf->Data));
+							val->as<::rive::ViewModelInstanceString>()->propertyValue(static_cast<const char*>(pinBuf.Data));
 							break;
 						case ::rive::DataType::number:
-							val->as<::rive::ViewModelInstanceNumber>()->propertyValue(*static_cast<float*>(pinBuf->Data));
+							val->as<::rive::ViewModelInstanceNumber>()->propertyValue(*static_cast<const float*>(pinBuf.Data));
 							break;
 						case ::rive::DataType::boolean:
-							val->as<::rive::ViewModelInstanceBoolean>()->propertyValue(*static_cast<bool*>(pinBuf->Data));
+							val->as<::rive::ViewModelInstanceBoolean>()->propertyValue(*static_cast<const bool*>(pinBuf.Data));
 							break;
 						default:
 							break;
@@ -327,31 +326,23 @@ struct RendererNode : NodeContext
 				external.Handle = reinterpret_cast<uint64_t>(sharedHandle);
 				external.Offset = 0;
 				external.PID = GetCurrentProcessId();
-				nosResourceShareInfo imported = {};
-				imported.Info.Type = NOS_RESOURCE_TYPE_TEXTURE;
-				imported.Info.Texture.Width = FrameDesc.renderTargetWidth;
-				imported.Info.Texture.Height = FrameDesc.renderTargetHeight;
-				imported.Info.Texture.Format = NOS_FORMAT_R8G8B8A8_SRGB;
-				imported.Info.Texture.Usage = nosImageUsage(NOS_IMAGE_USAGE_SAMPLED | NOS_IMAGE_USAGE_TRANSFER_SRC);
-				imported.Info.Texture.FieldType = NOS_TEXTURE_FIELD_TYPE_PROGRESSIVE;
-				imported.Memory = {
-					.Handle = 0, // Let Vulkan assign
-					.Size = 0,   // Let Vulkan assign
-					.ExternalMemory = external
-				};
-				auto res = nosVulkan->ImportResource(&imported, "Rive Imported Render Target");
-				if (res != NOS_RESULT_SUCCESS || imported.Memory.Handle == 0)
+				nosResourceInfo imported = {};
+				imported.Type = NOS_RESOURCE_TYPE_TEXTURE;
+				imported.Texture.Width = FrameDesc.renderTargetWidth;
+				imported.Texture.Height = FrameDesc.renderTargetHeight;
+				imported.Texture.Format = NOS_FORMAT_R8G8B8A8_SRGB;
+				imported.Texture.Usage = nosImageUsage(NOS_IMAGE_USAGE_SAMPLED | NOS_IMAGE_USAGE_TRANSFER_SRC);
+				Imported = {};
+				auto res = nosVulkan->ImportResource(&imported, &external, "Rive Imported Render Target", &Imported.GetStorage());
+				if (res != NOS_RESULT_SUCCESS || !Imported)
 				{
 					nosEngine.LogE("Failed to import Rive render target.");
 					if (res != NOS_RESULT_FAILED)
 						res = NOS_RESULT_FAILED;
 					return res;
 				}
-				DeleteImportedResource();
-				Imported = imported;
 				// Set output texture
-				auto buf = vkss::TexturePinData::Pack(Imported);
-				nosEngine.SetPinValueByName(NodeId, NOS_NAME("Output"), buf);
+				SetPinObject(NOS_NAME("Output"), Imported);
 			}
 
 			// Set artboard size to match render target
@@ -395,17 +386,17 @@ struct RendererNode : NodeContext
 						.Name = inputName,
 						.RiveType = dataType,
 						.Type = DataBindType::StateMachineInput,
-						.SetData = [this, input](DataBinding const& binding, const nosBuffer* pinBuf)
+						.SetData = [this, input](DataBinding const& binding, ObjectDataView const& pinBuf)
 						{
 							switch (binding.RiveType)
 							{
 							case ::rive::DataType::number:
 								if (auto smiNum = StateMachine->getNumber(binding.Name))
-									smiNum->value(*static_cast<float*>(pinBuf->Data));
+									smiNum->value(*static_cast<const float*>(pinBuf.Data));
 								break;
 							case ::rive::DataType::boolean:
 								if (auto smiBool = StateMachine->getBool(binding.Name))
-									smiBool->value(*static_cast<bool*>(pinBuf->Data));
+									smiBool->value(*static_cast<const bool*>(pinBuf.Data));
 								break;
 							case ::rive::DataType::trigger:
 								// For triggers, we just need to fire them when the pin is triggered
@@ -426,9 +417,9 @@ struct RendererNode : NodeContext
 					.RiveType = ::rive::DataType::none,
 					.NodosType = "nos.fb.vec2",
 					.Type = DataBindType::StateMachineDefaultInput,
-					.SetData = [this](DataBinding const& binding, const nosBuffer* pinBuf)
+					.SetData = [this](DataBinding const& binding, ObjectDataView const& pinBuf)
 					{
-						auto vec = static_cast<const nos::fb::vec2*>(pinBuf->Data);
+						auto vec = static_cast<const nos::fb::vec2*>(pinBuf.Data);
 						StateMachine->pointerMove(::rive::Vec2D(vec->x(), vec->y()));
 					}
 				};
@@ -439,12 +430,6 @@ struct RendererNode : NodeContext
 		}
 
 		return NOS_RESULT_SUCCESS;
-	}
-
-	void DeleteImportedResource()
-	{
-		if (Imported.Memory.Handle != 0)
-			nosVulkan->DestroyResource(&Imported);
 	}
 
 	static std::string RiveDataType2NodosType(::rive::DataType riveDataType)
@@ -534,17 +519,15 @@ struct RendererNode : NodeContext
 		return pins;
 	}
 
-	nosResult ExecuteNode(nosNodeExecuteParams* params) override
+	nosResult ExecuteNode(nos::NodeExecuteParams const& params) override
 	{
-		nos::NodeExecuteParams execParams = params;
-
 		if (!RenderTarget)
 			return NOS_RESULT_FAILED;
 
 		if (!Artboard)
 			return NOS_RESULT_FAILED;
 
-		auto deltaSecs = execParams.GetDeltaTime();
+		auto deltaSecs = params.GetDeltaTime();
 
 		RenderContext->beginFrame(FrameDesc);
 		
@@ -558,12 +541,16 @@ struct RendererNode : NodeContext
 		for (auto& [name, binding] : Bindings)
 		{
 			auto pinName = nos::Name(name);
-			if (!execParams.contains(pinName))
+			auto pinInfo = params[pinName];
+			ObjectRef obj = *pinInfo.Object;
+			if (!obj)
 				continue;
-			auto pinInfo = execParams[pinName];
-			auto pinBuf = pinInfo.Data;
-			if (pinInfo.Dirty == NOS_TRUE)
-				binding.SetData(binding, pinBuf);
+			if (*pinInfo.DirtyPtr == NOS_TRUE)
+			{
+				auto res = obj.GetObjectDataView();
+				if (auto* buf = res.Ok())
+					binding.SetData(binding, *buf);
+			}
 		}
 
 		// Draw artboard
@@ -586,7 +573,7 @@ struct RendererNode : NodeContext
 	std::unique_ptr<::rive::RiveRenderer> Renderer;
 	std::unique_ptr<::rive::gpu::RenderContext> RenderContext;
 	::rive::rcp<::rive::gpu::RenderTarget> RenderTarget;
-	nosResourceShareInfo Imported{};
+	ObjectRef Imported{};
 	std::unique_ptr<::rive::File> RiveFile;
 	std::unique_ptr<::rive::ArtboardInstance> Artboard;
 
@@ -618,7 +605,7 @@ struct RendererNode : NodeContext
 		::rive::DataType RiveType;
 		std::optional<std::string> NodosType = std::nullopt; // If RiveType is none, this is used
 		DataBindType Type = DataBindType::None;
-		std::function<void(const DataBinding&, const nosBuffer*)> SetData;
+		std::function<void(const DataBinding&, ObjectDataView const&)> SetData;
 		std::string GetNodosType() const
 		{
 			if (RiveType == ::rive::DataType::none)
