@@ -39,6 +39,20 @@ on:
         required: false
         default: true
         type: boolean
+      version_check:
+        description: 'Version Check'
+        required: true
+        default: 'strict'
+        type: choice
+        options:
+          - none
+          - loose
+          - strict
+      nodos_version:
+        description: 'Nodos Version (optional, defaults to latest 1.4)'
+        required: false
+        default: ''
+        type: string
 
 run-name: >-
   ${{ ((github.event_name == 'push') && format('Build Only: {0}', github.event.head_commit.message)) ||
@@ -64,7 +78,9 @@ jobs:
       plugin_names: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.plugin_names || '' }}
       clean: ${{ github.event_name == 'workflow_dispatch' && fromJson(github.event.inputs.clean) || false }}
       build_number: ${{ github.run_number }}
+      nodos_version: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.nodos_version || '1.4' }}
       sign_binaries: ${{github.event_name == 'workflow_dispatch' && fromJson(github.event.inputs.sign_binaries) || false }}
       linux: false
       windows: ${{ github.event_name == 'workflow_dispatch' && fromJson(github.event.inputs.windows) || github.event_name == 'push' }}
       run_tests: ${{ github.event_name == 'workflow_dispatch' && fromJson(github.event.inputs.run_tests) || false }}
+      version_check: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version_check || 'strict' }}
