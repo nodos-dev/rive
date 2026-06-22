@@ -39,15 +39,6 @@ on:
         required: false
         default: true
         type: boolean
-      version_check:
-        description: 'Version Check'
-        required: true
-        default: 'strict'
-        type: choice
-        options:
-          - none
-          - loose
-          - strict
       nodos_version:
         description: 'Nodos Version (optional, defaults to latest 1.4)'
         required: false
@@ -83,4 +74,3 @@ jobs:
       linux: false
       windows: ${{ github.event_name == 'workflow_dispatch' && fromJson(github.event.inputs.windows) || github.event_name == 'push' }}
       run_tests: ${{ github.event_name == 'workflow_dispatch' && fromJson(github.event.inputs.run_tests) || false }}
-      version_check: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version_check || 'strict' }}
