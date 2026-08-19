@@ -102,3 +102,4 @@ jobs:
       windows: ${{ github.event_name == 'workflow_dispatch' && fromJson(github.event.inputs.windows) || github.event_name == 'push' }}
       run_tests: ${{ github.event_name == 'workflow_dispatch' && fromJson(github.event.inputs.run_tests) || false }}
       version_check: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version_check || 'strict' }}
+      upload_pdbs: false
